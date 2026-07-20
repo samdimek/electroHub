@@ -1,0 +1,453 @@
+// ElectroHub data model
+// A multi-vendor marketplace restricted to the ELECTRONICS category.
+// Vendor applications are validated against `Category.isElectronics`
+// at the application layer (see src/lib/validation/vendor.ts) so the
+// restriction is enforced both in the UI and in the API, not just here.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────── Identity & RBAC ───────────────────────────────
+
+enum Role {
+  SUPER_ADMIN // full platform control
+  ADMIN // day-to-day platform operations
+  STAFF // limited back-office access, scoped by Permission
+  VENDOR_OWNER // owns a vendor store
+  VENDOR_STAFF // works within one vendor store, scoped by Permission
+  CUSTOMER
+}
+
+enum Permission {
+  PRODUCTS_READ
+  PRODUCTS_WRITE
+  INVENTORY_WRITE
+  ORDERS_READ
+  ORDERS_WRITE
+  CUSTOMERS_READ
+  CUSTOMERS_WRITE
+  PROMOTIONS_WRITE
+  ANALYTICS_READ
+  WARRANTY_WRITE
+  VENDORS_APPROVE
+  ROLES_WRITE
+  AUDIT_LOG_READ
+}
+
+model User {
+  id                String    @id @default(cuid())
+  email             String    @unique
+  emailVerifiedAt   DateTime?
+  passwordHash      String
+  name              String
+  role              Role      @default(CUSTOMER)
+  permissions       Permission[]
+  isActive          Boolean   @default(true)
+  failedLoginCount  Int       @default(0)
+  lockedUntil       DateTime?
+  lastLoginAt       DateTime?
+  lastLoginIp       String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  vendorMemberships VendorMember[]
+  orders            Order[]
+  addresses         Address[]
+  cart              Cart?
+  auditLogs         AuditLog[]
+  sessions          Session[]
+  passwordResets    PasswordResetToken[]
+
+  @@index([role])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash    String   @unique
+  userAgent    String?
+  ip           String?
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  revokedAt    DateTime?
+
+  @@index([userId])
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+}
+
+model Address {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label      String?
+  line1      String
+  line2      String?
+  city       String
+  state      String
+  postalCode String
+  country    String
+  phone      String?
+  isDefault  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  ordersBilledTo   Order[] @relation("BillingAddress")
+  ordersShippedTo  Order[] @relation("ShippingAddress")
+}
+
+// ─────────────────────────────── Vendors ───────────────────────────────
+
+enum VendorStatus {
+  PENDING // application submitted, awaiting admin review
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+model Vendor {
+  id              String       @id @default(cuid())
+  storeName       String
+  slug            String       @unique
+  description     String?
+  logoUrl         String?
+  bannerUrl       String?
+  status          VendorStatus @default(PENDING)
+  rejectionReason String?
+  // Electronics-only enforcement: every vendor must map to at least one
+  // category flagged isElectronics = true. Checked in the application
+  // API (src/app/api/vendors/apply/route.ts) before status can move
+  // to APPROVED.
+  categories      VendorCategory[]
+  businessEmail   String
+  businessPhone   String?
+  taxId           String?
+  payoutEmail     String?
+  commissionRate  Decimal      @default(10.0) @db.Decimal(5, 2)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  approvedAt      DateTime?
+  approvedById    String?
+
+  members  VendorMember[]
+  products Product[]
+  coupons  Coupon[]
+  orderItems OrderItem[]
+
+  @@index([status])
+}
+
+model VendorMember {
+  id       String @id @default(cuid())
+  vendorId String
+  vendor   Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role     Role   @default(VENDOR_STAFF)
+
+  @@unique([vendorId, userId])
+}
+
+// ─────────────────────────────── Catalog ───────────────────────────────
+
+model Category {
+  id            String   @id @default(cuid())
+  name          String
+  slug          String   @unique
+  parentId      String?
+  parent        Category? @relation("CategoryTree", fields: [parentId], references: [id])
+  children      Category[] @relation("CategoryTree")
+  // Only categories with isElectronics = true are selectable by vendors
+  // during onboarding — this is the enforcement point for "electronics
+  // vendors only".
+  isElectronics Boolean  @default(true)
+
+  products        Product[]
+  vendorCategories VendorCategory[]
+}
+
+model VendorCategory {
+  vendorId   String
+  vendor     Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([vendorId, categoryId])
+}
+
+enum ProductStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+model Product {
+  id              String        @id @default(cuid())
+  vendorId        String
+  vendor          Vendor        @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  categoryId      String
+  category        Category      @relation(fields: [categoryId], references: [id])
+  title           String
+  slug            String        @unique
+  description     String
+  brand           String?
+  sku             String
+  status          ProductStatus @default(DRAFT)
+  priceCents      Int
+  compareAtCents  Int?
+  currency        String        @default("USD")
+  warrantyMonths  Int           @default(0)
+  images          ProductImage[]
+  attributes      Json?         // free-form spec sheet: {"RAM": "16GB", ...}
+  metaTitle       String?
+  metaDescription String?
+  searchKeywords  String?       // SEO / internal search boosting
+  weightGrams     Int?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  inventory     Inventory?
+  orderItems    OrderItem[]
+  reviews       Review[]
+  warranties    Warranty[]
+
+  @@unique([vendorId, sku])
+  @@index([status])
+  @@index([categoryId])
+}
+
+model ProductImage {
+  id        String  @id @default(cuid())
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  s3Key     String
+  url       String
+  alt       String?
+  position  Int     @default(0)
+}
+
+model Inventory {
+  id                String   @id @default(cuid())
+  productId         String   @unique
+  product           Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantityOnHand    Int      @default(0)
+  quantityReserved  Int      @default(0)
+  lowStockThreshold Int      @default(5)
+  warehouseLocation String?
+  updatedAt         DateTime @updatedAt
+
+  movements InventoryMovement[]
+}
+
+enum InventoryMovementType {
+  RESTOCK
+  SALE
+  RETURN
+  ADJUSTMENT
+  RESERVATION
+  RESERVATION_RELEASE
+}
+
+model InventoryMovement {
+  id          String                 @id @default(cuid())
+  inventoryId String
+  inventory   Inventory              @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+  type        InventoryMovementType
+  quantity    Int // positive = increase, negative = decrease
+  reason      String?
+  orderId     String?
+  createdById String?
+  createdAt   DateTime               @default(now())
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  rating    Int
+  title     String?
+  body      String?
+  createdAt DateTime @default(now())
+}
+
+// ─────────────────────────────── Cart / Orders ───────────────────────────────
+
+model Cart {
+  id        String     @id @default(cuid())
+  userId    String     @unique
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items     CartItem[]
+  updatedAt DateTime   @updatedAt
+}
+
+model CartItem {
+  id        String  @id @default(cuid())
+  cartId    String
+  cart      Cart    @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  productId String
+  quantity  Int     @default(1)
+
+  @@unique([cartId, productId])
+}
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  PAID
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  REFUNDED
+}
+
+model Order {
+  id                String      @id @default(cuid())
+  orderNumber       String      @unique
+  userId            String
+  user              User        @relation(fields: [userId], references: [id])
+  status            OrderStatus @default(PENDING_PAYMENT)
+  subtotalCents     Int
+  discountCents     Int         @default(0)
+  taxCents          Int         @default(0)
+  shippingCents     Int         @default(0)
+  totalCents        Int
+  currency          String      @default("USD")
+  couponId          String?
+  coupon            Coupon?     @relation(fields: [couponId], references: [id])
+  billingAddressId  String?
+  billingAddress    Address?    @relation("BillingAddress", fields: [billingAddressId], references: [id])
+  shippingAddressId String?
+  shippingAddress   Address?    @relation("ShippingAddress", fields: [shippingAddressId], references: [id])
+  // Stripe PaymentIntent id only — never raw card data (tokenization).
+  paymentIntentId   String?
+  paymentMethodBrand String?
+  paymentMethodLast4 String?
+  placedAt          DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  items     OrderItem[]
+  warranties Warranty[]
+
+  @@index([status])
+  @@index([userId])
+}
+
+model OrderItem {
+  id           String  @id @default(cuid())
+  orderId      String
+  order        Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId    String
+  product      Product @relation(fields: [productId], references: [id])
+  vendorId     String
+  vendor       Vendor  @relation(fields: [vendorId], references: [id])
+  titleSnapshot String
+  skuSnapshot   String
+  unitPriceCents Int
+  quantity     Int
+  totalCents   Int
+}
+
+// ─────────────────────────────── Promotions ───────────────────────────────
+
+enum CouponType {
+  PERCENTAGE
+  FIXED_AMOUNT
+  FREE_SHIPPING
+}
+
+model Coupon {
+  id             String     @id @default(cuid())
+  code           String     @unique
+  description    String?
+  type           CouponType
+  value          Decimal    @db.Decimal(10, 2) // percent or cents depending on type
+  vendorId       String?    // null = platform-wide coupon
+  vendor         Vendor?    @relation(fields: [vendorId], references: [id])
+  minSubtotalCents Int?
+  maxRedemptions Int?
+  redemptionCount Int       @default(0)
+  startsAt       DateTime?
+  expiresAt      DateTime?
+  isActive       Boolean    @default(true)
+  createdAt      DateTime   @default(now())
+
+  orders Order[]
+}
+
+// ─────────────────────────────── Warranty ───────────────────────────────
+
+enum WarrantyStatus {
+  ACTIVE
+  EXPIRED
+  CLAIMED
+  VOID
+}
+
+model Warranty {
+  id            String         @id @default(cuid())
+  productId     String
+  product       Product        @relation(fields: [productId], references: [id])
+  orderId       String
+  order         Order          @relation(fields: [orderId], references: [id])
+  serialNumber  String?
+  startsAt      DateTime       @default(now())
+  expiresAt     DateTime
+  status        WarrantyStatus @default(ACTIVE)
+  claims        WarrantyClaim[]
+
+  @@index([status])
+  @@index([expiresAt])
+}
+
+enum WarrantyClaimStatus {
+  OPEN
+  IN_REVIEW
+  APPROVED
+  REJECTED
+  RESOLVED
+}
+
+model WarrantyClaim {
+  id          String              @id @default(cuid())
+  warrantyId  String
+  warranty    Warranty            @relation(fields: [warrantyId], references: [id], onDelete: Cascade)
+  description String
+  status      WarrantyClaimStatus @default(OPEN)
+  resolution  String?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+}
+
+// ─────────────────────────────── Audit Log ───────────────────────────────
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actor      User?    @relation(fields: [actorId], references: [id])
+  actorEmail String? // snapshot in case the user is later deleted
+  action     String // e.g. "product.create", "vendor.approve", "order.refund"
+  entityType String // e.g. "Product", "Vendor", "Order"
+  entityId   String?
+  metadata   Json?
+  ip         String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([action])
+  @@index([createdAt])
+}

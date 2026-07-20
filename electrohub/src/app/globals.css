@@ -1,0 +1,65 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+  Design signature: ElectroHub reads like a component datasheet — hairline
+  rules, monospace figures for prices/SKUs/specs (like a multimeter
+  readout), and a single volt-green signal color standing in for an
+  "active" LED indicator. Everything else stays quiet: near-black panels,
+  thin borders, no gradients, no drop shadows beyond a 1px edge.
+*/
+
+:root {
+  --font-display: 'Space Grotesk', sans-serif;
+  --font-body: 'IBM Plex Sans', sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+}
+
+* {
+  border-color: theme('colors.ink.700');
+}
+
+::selection {
+  background: theme('colors.volt.DEFAULT');
+  color: theme('colors.ink.950');
+}
+
+body {
+  background-image:
+    linear-gradient(theme('colors.ink.800') 1px, transparent 1px),
+    linear-gradient(90deg, theme('colors.ink.800') 1px, transparent 1px);
+  background-size: 48px 48px;
+  background-position: -1px -1px;
+  background-attachment: fixed;
+}
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: theme('colors.ink.400');
+}
+
+.readout {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid theme('colors.volt.DEFAULT');
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
