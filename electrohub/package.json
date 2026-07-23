@@ -21,7 +21,6 @@
     "@aws-sdk/s3-request-presigner": "^3.633.0",
     "@node-rs/argon2": "^1.8.3",
     "@prisma/client": "^5.19.1",
-    "@sentry/nextjs": "^8.26.0",
     "@stripe/react-stripe-js": "^2.8.0",
     "@stripe/stripe-js": "^4.4.0",
     "@upstash/ratelimit": "^2.0.3",
