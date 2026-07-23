@@ -23,9 +23,6 @@ export async function withApiErrorHandling(fn: () => Promise<NextResponse>): Pro
       return NextResponse.json({ error: err.message }, { status: err.status });
     }
 
-    const Sentry = await import('@sentry/nextjs');
-    Sentry.captureException(err);
-    // eslint-disable-next-line no-console
     console.error(err);
     return NextResponse.json({ error: 'Something went wrong. Please try again.' }, { status: 500 });
   }
