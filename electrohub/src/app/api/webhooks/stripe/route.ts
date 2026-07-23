@@ -4,9 +4,6 @@ import { stripe } from '@/lib/stripe';
 import { emails } from '@/lib/email';
 import { writeAuditLog } from '@/lib/audit';
 
-// Stripe webhooks are authenticated via HMAC signature (Stripe-Signature
-// header), not our session/CSRF machinery — this route is intentionally
-// exempt from the CSRF check in middleware.ts. It's still rate-limited.
 export async function POST(request: NextRequest) {
   const signature = request.headers.get('stripe-signature');
   if (!signature) return NextResponse.json({ error: 'Missing signature' }, { status: 400 });
@@ -53,10 +50,9 @@ export async function POST(request: NextRequest) {
         break;
       }
       default:
-        break; // Unhandled event types are ignored, not errored.
+        break;
     }
   } catch (err) {
-    const Sentry = await import('@sentry/nextjs');
     console.error('[stripe-webhook] handler error:', event.type, err);
     return NextResponse.json({ error: 'Webhook handler error' }, { status: 500 });
   }
