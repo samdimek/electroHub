@@ -4,26 +4,21 @@ import { withSentryConfig } from '@sentry/nextjs';
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
-  // 'standalone' only matters for the Docker/self-hosted build path;
-  // Vercel ignores it and uses its own optimized output.
   output: process.env.DOCKER_BUILD ? 'standalone' : undefined,
+  experimental: {
+    // @node-rs/argon2 ships a native .node binary. Without this, webpack
+    // tries to parse that binary as JavaScript and the build fails.
+    serverComponentsExternalPackages: ['@node-rs/argon2'],
+  },
   images: {
     remotePatterns: [
-      {
-        protocol: 'https',
-        hostname: '*.amazonaws.com',
-      },
-      {
-        protocol: 'https',
-        hostname: process.env.CDN_HOSTNAME || 'cdn.example.com',
-      },
+      { protocol: 'https', hostname: '*.amazonaws.com' },
+      { protocol: 'https', hostname: process.env.CDN_HOSTNAME || 'cdn.example.com' },
     ],
   },
   async headers() {
     return [
       {
-        // Security headers applied to every route. HTTPS is enforced by
-        // Vercel at the edge; HSTS below reinforces it at the browser level.
         source: '/:path*',
         headers: [
           { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
@@ -49,12 +44,19 @@ const nextConfig = {
   },
 };
 
-export default withSentryConfig(nextConfig, {
+const sentryOptions = {
   silent: true,
   org: process.env.SENTRY_ORG,
   project: process.env.SENTRY_PROJECT,
-}, {
-  widenClientFileUpload: true,
-  hideSourceMaps: true,
-  disableLogger: true,
-});
+  authToken: process.env.SENTRY_AUTH_TOKEN,
+};
+
+// Skip the Sentry build plugin entirely if no auth token is configured,
+// so a Sentry hiccup can never take down the whole deploy again.
+export default process.env.SENTRY_AUTH_TOKEN
+  ? withSentryConfig(nextConfig, sentryOptions, {
+      widenClientFileUpload: true,
+      hideSourceMaps: true,
+      disableLogger: true,
+    })
+  : nextConfig;
