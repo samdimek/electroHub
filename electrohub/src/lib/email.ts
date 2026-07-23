@@ -7,10 +7,7 @@ async function send(to: string, subject: string, html: string) {
   try {
     await resend.emails.send({ from: FROM, to, subject, html });
   } catch (err) {
-    // Email failures should never break the primary request flow (order
-    // placement, vendor approval, etc). Sentry captures it for follow-up.
-    const Sentry = await import('@sentry/nextjs');
-    Sentry.captureException(err, { tags: { area: 'email' } });
+    console.error('[email] send failed:', err);
   }
 }
 
