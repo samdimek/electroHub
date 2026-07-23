@@ -1,4 +1,5 @@
 import { type NextRequest } from 'next/server';
+import type { OrderStatus } from '@prisma/client';
 import { db } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
 import { requirePermission, isAdmin } from '@/lib/rbac';
@@ -6,6 +7,7 @@ import { withApiErrorHandling, ok } from '@/lib/apiResponse';
 import { cached, cacheKeys } from '@/lib/redis';
 
 const RANGE_DAYS: Record<string, number> = { '7d': 7, '30d': 30, '90d': 90 };
+const PAID_STATUSES: OrderStatus[] = ['PAID', 'PROCESSING', 'SHIPPED', 'DELIVERED'];
 
 export async function GET(request: NextRequest) {
   return withApiErrorHandling(async () => {
@@ -24,7 +26,7 @@ export async function GET(request: NextRequest) {
       cacheKeys.analyticsSummary(scopeKey, range),
       async () => {
         const orderItemWhere = {
-          order: { placedAt: { gte: since }, status: { in: ['PAID', 'PROCESSING', 'SHIPPED', 'DELIVERED'] as const } },
+          order: { placedAt: { gte: since }, status: { in: PAID_STATUSES } },
           ...(vendor ? { vendorId: vendor.id } : {}),
         };
 
