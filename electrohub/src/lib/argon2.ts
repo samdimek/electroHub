@@ -1,33 +1,25 @@
-import { hash, verify } from '@node-rs/argon2';
+import bcrypt from 'bcryptjs';
 
-// @node-rs/argon2 ships prebuilt native binaries per-platform (unlike the
-// `argon2` package, which compiles from source), which is what makes it
-// reliable on Vercel's build/runtime images without extra build steps.
-//
-// Params below follow OWASP's current Argon2id guidance for a
-// general-purpose web login (memory-hard, tuned for ~a few hundred ms
-// per hash on serverless-class CPU).
-const ARGON2_OPTIONS = {
-  memoryCost: 19456, // 19 MiB
-  timeCost: 2,
-  outputLen: 32,
-  parallelism: 1,
-  algorithm: 2, // Argon2id
-} as const;
+// bcryptjs is a pure-JavaScript implementation — no native binary, so it
+// needs no special bundler configuration and behaves identically in any
+// Node.js environment (local, Docker, Vercel serverless). This replaces
+// an earlier native (Rust/NAPI) implementation that required a webpack
+// externals exemption — which is the leading suspect for the build
+// failures we've been chasing.
+const SALT_ROUNDS = 12;
 
 export async function hashPassword(plain: string): Promise<string> {
-  return hash(plain, ARGON2_OPTIONS);
+  return bcrypt.hash(plain, SALT_ROUNDS);
 }
 
 export async function verifyPassword(plain: string, hashed: string): Promise<boolean> {
   try {
-    return await verify(hashed, plain);
+    return await bcrypt.compare(plain, hashed);
   } catch {
     return false;
   }
 }
 
-/** Minimum password policy, enforced server-side (never trust client-only checks). */
 export function isPasswordStrongEnough(plain: string): boolean {
   if (plain.length < 10) return false;
   const hasLower = /[a-z]/.test(plain);
