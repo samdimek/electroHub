@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
     }
   } catch (err) {
     const Sentry = await import('@sentry/nextjs');
-    Sentry.captureException(err, { tags: { area: 'stripe-webhook' }, extra: { eventType: event.type } });
+    console.error('[stripe-webhook] handler error:', event.type, err);
     return NextResponse.json({ error: 'Webhook handler error' }, { status: 500 });
   }
 
