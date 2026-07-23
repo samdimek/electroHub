@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import { hash } from '@node-rs/argon2';
+import bcrypt from 'bcryptjs';
 
 const db = new PrismaClient();
 
@@ -33,13 +33,7 @@ async function main() {
         'Set SEED_ADMIN_EMAIL and SEED_ADMIN_PASSWORD env vars and re-run to create one.'
     );
   } else {
-    const passwordHash = await hash(adminPassword, {
-      memoryCost: 19456,
-      timeCost: 2,
-      outputLen: 32,
-      parallelism: 1,
-      algorithm: 2,
-    });
+    const passwordHash = await bcrypt.hash(adminPassword, 12);
 
     await db.user.upsert({
       where: { email: adminEmail.toLowerCase() },
