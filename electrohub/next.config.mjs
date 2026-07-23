@@ -3,9 +3,6 @@ const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   output: process.env.DOCKER_BUILD ? 'standalone' : undefined,
-  experimental: {
-    serverComponentsExternalPackages: ['@node-rs/argon2'],
-  },
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: '*.amazonaws.com' },
