@@ -35,7 +35,6 @@ export async function writeAuditLog(ctx: AuditContext): Promise<void> {
       },
     });
   } catch (err) {
-    const Sentry = await import('@sentry/nextjs');
-    Sentry.captureException(err, { tags: { area: 'audit-log' }, extra: { action: ctx.action } });
+    console.error('[audit-log] failed to write entry:', ctx.action, err);
   }
 }
